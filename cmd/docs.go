@@ -3,6 +3,7 @@ package cmd
 import (
 	"log"
 	"os"
+	"path"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
@@ -22,7 +23,18 @@ var docsCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		err = doc.GenMarkdownTree(rootCmd, cwd)
+		// Check to ensure docs dir exists, if not (attempt to) create one
+		docsDir := path.Join(cwd, "docs")
+		if exists, err := OsFs.DirExists(docsDir); err != nil {
+			log.Fatal(err)
+		} else if !exists {
+			err = OsFs.MkdirAll(docsDir, 0755)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		err = doc.GenMarkdownTree(rootCmd, path.Join(cwd, "docs"))
 		if err != nil {
 			log.Fatal(err)
 		}

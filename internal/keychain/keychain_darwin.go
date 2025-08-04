@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrorDuplicateItem = keychain.ErrorDuplicateItem
+	ErrorDuplicateItem = keychain.ErrrorDuplicateItem
 	ErrorItemNotFound  = keychain.ErrorItemNotFound
 )
 

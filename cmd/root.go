@@ -1,73 +1,30 @@
 package cmd
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 
-	"github.com/plumber-cd/kubectl-credentials-helper/keychain"
+	"github.com/davidcollom/kubectl-credentials-keychain/internal/executor"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	clientauthentication "k8s.io/client-go/pkg/apis/clientauthentication/v1"
-	"k8s.io/client-go/tools/auth/exec"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
-var (
-	rootCmd = &cobra.Command{
-		Use:   "kubectl-credentials-helper",
-		Short: "It helps",
-		Run: func(cmd *cobra.Command, args []string) {
-			printfln("KUBERNETES_EXEC_INFO: %q", os.Getenv("KUBERNETES_EXEC_INFO"))
+var logger = logrus.New()
 
-			ec, _, err := exec.LoadExecCredentialFromEnv()
-			if err != nil {
-				dief("load: %q", err.Error())
-			}
-
-			ecv1, ok := ec.(*clientauthentication.ExecCredential)
-			if !ok {
-				dief("cast failed: %#v\n", ec)
-			}
-
-			clusterEndpoint := ecv1.Spec.Cluster.Server
-			if clusterEndpoint == "" {
-				dief("empty cluster endpoint in the input")
-			}
-			printfln("cluster endpoint: %s", clusterEndpoint)
-
-			clusterName, secretB64, err := keychain.GetSecret(clusterEndpoint)
-			if err != nil {
-				dief("secret: %s", err)
-			}
-			printfln("found secret %s", clusterName)
-
-			secret, err := base64.StdEncoding.DecodeString(secretB64)
-			if err != nil {
-				dief("b64: %s", err)
-			}
-
-			cfg, err := clientcmd.Load(secret)
-			if err != nil {
-				dief("config: %s", err)
-			}
-
-			ecv1.APIVersion = clientauthentication.SchemeGroupVersion.String()
-			ecv1.Status = &clientauthentication.ExecCredentialStatus{
-				ClientCertificateData: string(cfg.AuthInfos[clusterName].ClientCertificateData),
-				ClientKeyData:         string(cfg.AuthInfos[clusterName].ClientKeyData),
-			}
-
-			data, err := json.Marshal(ecv1)
-			if err != nil {
-				dief("marshal: %q", err.Error())
-			}
-			printfln("marshal: %q", string(data))
-
-			fmt.Println(string(data))
-		},
-	}
-)
+var rootCmd = &cobra.Command{
+	Use:   "kubectl-credentials-keychain",
+	Short: "Kubernetes credentials helper that securely stores and retrieves cluster credentials",
+	Long: `kubectl-credentials-helper is a tool that helps manage Kubernetes cluster credentials
+by securely storing them in the system keychain and retrieving them when needed. Credentials are never written to disk.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		r := &executor.Runner{
+			Logger: logrus.StandardLogger(),
+			Loader: &executor.EnvExecCredentialLoader{},
+			Stdout: func(s string) { fmt.Println(s) },
+		}
+		return r.Run()
+	},
+}
 
 func Execute() error {
 	return rootCmd.Execute()
@@ -78,19 +35,18 @@ func init() {
 }
 
 func initConfig() {
-}
+	// Setup logrus
+	logger.SetOutput(os.Stderr)
+	logger.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: false,
+	})
 
-func printfln(format string, a ...interface{}) {
-	if os.Getenv("KUBECTL_CREDENTIALS_HELPER_DEBUG") == "true" {
-		reallyPrintf(format+"\n", a...)
+	// Set debug level if environment variable is set
+	if os.Getenv("KUBECTL_CREDENTIALS_KEYCHAIN_DEBUG") == "true" {
+		logger.SetLevel(logrus.DebugLevel)
+	} else {
+		logger.SetLevel(logrus.InfoLevel)
 	}
-}
 
-func reallyPrintf(format string, a ...interface{}) {
-	fmt.Fprintf(os.Stderr, "kubectl-credentials-helper> "+format, a...)
-}
-
-func dief(format string, a ...interface{}) {
-	reallyPrintf("error: "+format+"\n", a...)
-	os.Exit(1)
+	logger.Debug("kubectl-credentials-keychain initialized")
 }
